@@ -10,6 +10,9 @@ public sealed class CatalogOptions
     public const string DefaultApiVersion = "7.1";
     public const string DefaultOutputDirectory = "out";
     public const string DefaultStatePath = ".ado-catalog/state.json";
+    public const int DefaultMaxConcurrency = 3;
+    public const int MinConcurrency = 2;
+    public const int MaxAllowedConcurrency = 4;
 
     public string Organization { get; set; } = "";
 
@@ -27,6 +30,26 @@ public sealed class CatalogOptions
     public string BaseUrl { get; set; } = DefaultBaseUrl;
 
     public string ApiVersion { get; set; } = DefaultApiVersion;
+
+    /// <summary>Repos processed at once. Clamped to 2–4. Default 3.</summary>
+    public int MaxConcurrency { get; set; } = DefaultMaxConcurrency;
+
+    /// <summary>HTTP retries after 429. Default 5.</summary>
+    public int MaxRetries { get; set; } = 5;
+
+    /// <summary>0 disables jitter (useful in tests). Default 0.25.</summary>
+    public double RetryJitterRatio { get; set; } = 0.25;
+
+    public TimeSpan RetryBaseDelay { get; set; } = TimeSpan.FromSeconds(1);
+
+    public int EffectiveMaxConcurrency
+    {
+        get
+        {
+            var value = MaxConcurrency <= 0 ? DefaultMaxConcurrency : MaxConcurrency;
+            return Math.Clamp(value, MinConcurrency, MaxAllowedConcurrency);
+        }
+    }
 
     public string WikiDirectory => Path.Combine(OutputDirectory, "wiki");
 

@@ -15,21 +15,34 @@ public sealed class FakeAzureDevOpsClient : IAzureDevOpsClient
     public Dictionary<string, Dictionary<string, Dictionary<string, string>>> ContentByRepoBranchPath { get; } =
         new(StringComparer.OrdinalIgnoreCase);
 
-    public int ListProjectsCalls { get; private set; }
+    private int _listProjectsCalls;
+    private int _listRepositoriesCalls;
+    private int _getRepositoryCalls;
+    private int _getHeadCommitCalls;
+    private int _listItemsCalls;
+    private int _getItemContentCalls;
+    private int _inFlight;
+    private int _peakInFlight;
 
-    public int ListRepositoriesCalls { get; private set; }
+    public TimeSpan RepositoryHold { get; set; } = TimeSpan.Zero;
 
-    public int GetRepositoryCalls { get; private set; }
+    public int ListProjectsCalls => _listProjectsCalls;
 
-    public int GetHeadCommitCalls { get; private set; }
+    public int ListRepositoriesCalls => _listRepositoriesCalls;
 
-    public int ListItemsCalls { get; private set; }
+    public int GetRepositoryCalls => _getRepositoryCalls;
 
-    public int GetItemContentCalls { get; private set; }
+    public int GetHeadCommitCalls => _getHeadCommitCalls;
+
+    public int ListItemsCalls => _listItemsCalls;
+
+    public int GetItemContentCalls => _getItemContentCalls;
+
+    public int PeakInFlight => _peakInFlight;
 
     public Task<IReadOnlyList<AdoProject>> ListProjectsAsync(CancellationToken cancellationToken = default)
     {
-        ListProjectsCalls++;
+        Interlocked.Increment(ref _listProjectsCalls);
         return Task.FromResult<IReadOnlyList<AdoProject>>(Projects.ToArray());
     }
 
@@ -37,23 +50,37 @@ public sealed class FakeAzureDevOpsClient : IAzureDevOpsClient
         string project,
         CancellationToken cancellationToken = default)
     {
-        ListRepositoriesCalls++;
+        Interlocked.Increment(ref _listRepositoriesCalls);
         var matches = Repositories
             .Where(repo => string.Equals(repo.Project?.Name, project, StringComparison.OrdinalIgnoreCase))
             .ToArray();
         return Task.FromResult<IReadOnlyList<AdoRepository>>(matches);
     }
 
-    public Task<AdoRepository> GetRepositoryAsync(
+    public async Task<AdoRepository> GetRepositoryAsync(
         string project,
         string repositoryId,
         CancellationToken cancellationToken = default)
     {
-        GetRepositoryCalls++;
-        var repo = Repositories.First(item =>
-            string.Equals(item.Id, repositoryId, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(item.Project?.Name, project, StringComparison.OrdinalIgnoreCase));
-        return Task.FromResult(Clone(repo));
+        Interlocked.Increment(ref _getRepositoryCalls);
+        var current = Interlocked.Increment(ref _inFlight);
+        UpdatePeak(current);
+        try
+        {
+            if (RepositoryHold > TimeSpan.Zero)
+            {
+                await Task.Delay(RepositoryHold, cancellationToken).ConfigureAwait(false);
+            }
+
+            var repo = Repositories.First(item =>
+                string.Equals(item.Id, repositoryId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.Project?.Name, project, StringComparison.OrdinalIgnoreCase));
+            return Clone(repo);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _inFlight);
+        }
     }
 
     public Task<string?> GetHeadCommitAsync(
@@ -62,7 +89,7 @@ public sealed class FakeAzureDevOpsClient : IAzureDevOpsClient
         string branch,
         CancellationToken cancellationToken = default)
     {
-        GetHeadCommitCalls++;
+        Interlocked.Increment(ref _getHeadCommitCalls);
         if (HeadByRepoBranch.TryGetValue(repositoryId, out var branches) &&
             branches.TryGetValue(branch, out var sha))
         {
@@ -79,7 +106,7 @@ public sealed class FakeAzureDevOpsClient : IAzureDevOpsClient
         string branch,
         CancellationToken cancellationToken = default)
     {
-        ListItemsCalls++;
+        Interlocked.Increment(ref _listItemsCalls);
         var key = ScopeKey(branch, scopePath);
         if (ItemsByRepoBranchScope.TryGetValue(repositoryId, out var scopes) &&
             scopes.TryGetValue(key, out var items))
@@ -97,7 +124,7 @@ public sealed class FakeAzureDevOpsClient : IAzureDevOpsClient
         string branch,
         CancellationToken cancellationToken = default)
     {
-        GetItemContentCalls++;
+        Interlocked.Increment(ref _getItemContentCalls);
         if (ContentByRepoBranchPath.TryGetValue(repositoryId, out var branches) &&
             branches.TryGetValue(branch, out var files))
         {
@@ -153,12 +180,26 @@ public sealed class FakeAzureDevOpsClient : IAzureDevOpsClient
 
     public void ResetCallCounts()
     {
-        ListProjectsCalls = 0;
-        ListRepositoriesCalls = 0;
-        GetRepositoryCalls = 0;
-        GetHeadCommitCalls = 0;
-        ListItemsCalls = 0;
-        GetItemContentCalls = 0;
+        Interlocked.Exchange(ref _listProjectsCalls, 0);
+        Interlocked.Exchange(ref _listRepositoriesCalls, 0);
+        Interlocked.Exchange(ref _getRepositoryCalls, 0);
+        Interlocked.Exchange(ref _getHeadCommitCalls, 0);
+        Interlocked.Exchange(ref _listItemsCalls, 0);
+        Interlocked.Exchange(ref _getItemContentCalls, 0);
+        Interlocked.Exchange(ref _inFlight, 0);
+        Interlocked.Exchange(ref _peakInFlight, 0);
+    }
+
+    private void UpdatePeak(int current)
+    {
+        while (true)
+        {
+            var peak = _peakInFlight;
+            if (current <= peak || Interlocked.CompareExchange(ref _peakInFlight, current, peak) == peak)
+            {
+                return;
+            }
+        }
     }
 
     private static AdoRepository Clone(AdoRepository repo) => new()

@@ -46,6 +46,8 @@ public sealed class CatalogRunner
         var indexed = 0;
         var skipped = 0;
         var failed = 0;
+        var gate = new object();
+        var work = new List<(AdoProject Project, AdoRepository Repository)>();
 
         foreach (var project in projects)
         {
@@ -57,8 +59,8 @@ public sealed class CatalogRunner
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                failed++;
-                await _log.WriteLineAsync($"[error] list repos for {project.Name}: {ex.Message}").ConfigureAwait(false);
+                Interlocked.Increment(ref failed);
+                WriteLog($"[error] list repos for {project.Name}: {ex.Message}", gate);
                 continue;
             }
 
@@ -66,32 +68,47 @@ public sealed class CatalogRunner
             {
                 if (listed.IsDisabled)
                 {
-                    await _log.WriteLineAsync($"[skip-disabled] {project.Name}/{listed.Name}").ConfigureAwait(false);
+                    WriteLog($"[skip-disabled] {project.Name}/{listed.Name}", gate);
                     continue;
                 }
 
+                work.Add((project, listed));
+            }
+        }
+
+        await Parallel.ForEachAsync(
+            work,
+            new ParallelOptions
+            {
+                MaxDegreeOfParallelism = _options.EffectiveMaxConcurrency,
+                CancellationToken = cancellationToken,
+            },
+            async (item, token) =>
+            {
                 try
                 {
-                    var outcome = await ProcessRepositoryAsync(project, listed, state, cancellationToken)
+                    var outcome = await ProcessRepositoryAsync(item.Project, item.Repository, state, gate, token)
                         .ConfigureAwait(false);
-                    entries.Add(outcome.Entry);
+                    lock (gate)
+                    {
+                        entries.Add(outcome.Entry);
+                    }
+
                     if (outcome.Skipped)
                     {
-                        skipped++;
+                        Interlocked.Increment(ref skipped);
                     }
                     else
                     {
-                        indexed++;
+                        Interlocked.Increment(ref indexed);
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    failed++;
-                    await _log.WriteLineAsync($"[error] {project.Name}/{listed.Name}: {ex.Message}")
-                        .ConfigureAwait(false);
+                    Interlocked.Increment(ref failed);
+                    WriteLog($"[error] {item.Project.Name}/{item.Repository.Name}: {ex.Message}", gate);
                 }
-            }
-        }
+            }).ConfigureAwait(false);
 
         entries.Sort((a, b) =>
         {
@@ -103,9 +120,7 @@ public sealed class CatalogRunner
         await _stateStore.SaveAsync(state, cancellationToken).ConfigureAwait(false);
         await _embedder.EmbedAsync(entries, cancellationToken).ConfigureAwait(false);
 
-        await _log.WriteLineAsync(
-                $"[done] indexed={indexed} skipped={skipped} failed={failed} catalog={_options.CatalogJsonPath}")
-            .ConfigureAwait(false);
+        WriteLog($"[done] indexed={indexed} skipped={skipped} failed={failed} catalog={_options.CatalogJsonPath}", gate);
 
         return new CatalogRunResult
         {
@@ -137,6 +152,7 @@ public sealed class CatalogRunner
         AdoProject project,
         AdoRepository listed,
         IndexState state,
+        object gate,
         CancellationToken cancellationToken)
     {
         var details = await _client.GetRepositoryAsync(project.Name, listed.Id, cancellationToken)
@@ -161,17 +177,16 @@ public sealed class CatalogRunner
         var wikiFullPath = Path.Combine(_options.WikiDirectory, wikiFileName);
         var relativeWikiPath = Path.Combine("wiki", wikiFileName).Replace('\\', '/');
 
-        if (ShouldSkip(state, details.Id, headSha, wikiFullPath))
+        if (ShouldSkip(state, details.Id, headSha, wikiFullPath, gate))
         {
-            await _log.WriteLineAsync($"[skip] {project.Name}/{details.Name} @ {headSha}").ConfigureAwait(false);
+            WriteLog($"[skip] {project.Name}/{details.Name} @ {headSha}", gate);
             if (WikiPageWriter.TryReadEntry(wikiFullPath, relativeWikiPath, out var existing))
             {
                 return (existing, Skipped: true);
             }
         }
 
-        await _log.WriteLineAsync($"[index] {project.Name}/{details.Name} branch={branch} sha={headSha}")
-            .ConfigureAwait(false);
+        WriteLog($"[index] {project.Name}/{details.Name} branch={branch} sha={headSha}", gate);
 
         var snapshot = await FetchSnapshotAsync(project.Name, details, branch, headSha, cancellationToken)
             .ConfigureAwait(false);
@@ -185,26 +200,41 @@ public sealed class CatalogRunner
         var previous = File.Exists(wikiFullPath) ? File.ReadAllText(wikiFullPath) : null;
         WikiPageWriter.Write(_options.WikiDirectory, entry, previous);
 
-        state.Repos[details.Id] = new IndexedRepoState
+        lock (gate)
         {
-            HeadSha = headSha,
-            WikiFileName = wikiFileName,
-            IndexedAt = entry.LastIndexed,
-        };
+            state.Repos[details.Id] = new IndexedRepoState
+            {
+                HeadSha = headSha,
+                WikiFileName = wikiFileName,
+                IndexedAt = entry.LastIndexed,
+            };
+        }
 
         return (entry, Skipped: false);
     }
 
-    private static bool ShouldSkip(IndexState state, string repoId, string headSha, string wikiFullPath)
+    private void WriteLog(string message, object gate)
+    {
+        lock (gate)
+        {
+            _log.WriteLine(message);
+        }
+    }
+
+    private static bool ShouldSkip(IndexState state, string repoId, string headSha, string wikiFullPath, object gate)
     {
         if (!File.Exists(wikiFullPath))
         {
             return false;
         }
 
-        if (!state.Repos.TryGetValue(repoId, out var previous))
+        IndexedRepoState? previous;
+        lock (gate)
         {
-            return false;
+            if (!state.Repos.TryGetValue(repoId, out previous))
+            {
+                return false;
+            }
         }
 
         if (string.IsNullOrWhiteSpace(headSha) || string.IsNullOrWhiteSpace(previous.HeadSha))
@@ -264,6 +294,7 @@ public sealed class CatalogRunner
             }
         }
 
+        // Snapshot file bodies stay in memory for this repo only and are discarded after Infer.
         return new RepoSnapshot
         {
             Repository = repository,

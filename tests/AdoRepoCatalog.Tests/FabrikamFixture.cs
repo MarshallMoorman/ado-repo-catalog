@@ -14,6 +14,7 @@ public static class FabrikamFixture
 
     public const string ContosoDemoId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
     public const string FabrikamWebId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    public const string NotesId = "dddddddd-dddd-dddd-dddd-dddddddddddd";
 
     public const string ContosoHead = "1111111111111111111111111111111111111111";
     public const string FabrikamWebHead = "2222222222222222222222222222222222222222";
@@ -118,6 +119,24 @@ public static class FabrikamFixture
             """);
 
         return fake;
+    }
+
+    public static void AddEmptyNotesRepo(FakeAzureDevOpsClient fake)
+    {
+        var project = fake.Projects[0];
+        fake.Repositories.Add(new AdoRepository
+        {
+            Id = NotesId,
+            Name = "fabrikam-notes",
+            DefaultBranch = "refs/heads/main",
+            RemoteUrl = $"https://dev.azure.com/{Organization}/{ProjectName}/_git/fabrikam-notes",
+            Project = project,
+        });
+        fake.SetHead(NotesId, "main", "7777777777777777777777777777777777777777");
+        fake.AddItems(NotesId, "main", "/",
+            Folder("/"),
+            File("/README.md"));
+        fake.AddFile(NotesId, "main", "/README.md", "\n");
     }
 
     public static AdoItem File(string path) => new()

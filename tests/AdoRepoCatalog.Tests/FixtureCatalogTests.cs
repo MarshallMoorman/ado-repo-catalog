@@ -58,6 +58,8 @@ public sealed class FixtureCatalogTests
         Assert.Contains("Contoso storefront UI", webPage);
         Assert.Contains("react", webPage);
         Assert.Contains("typescript", webPage);
+        Assert.DoesNotContain("WebApplication.CreateBuilder", contosoPage);
+        Assert.DoesNotContain("ControllerBase", contosoPage);
     }
 
     [Fact]

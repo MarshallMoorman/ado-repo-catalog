@@ -195,6 +195,79 @@ public sealed class AzureDevOpsClientTests
         Assert.Equal("not-a-real-bearer", header.Parameter);
     }
 
+    [Fact]
+    public async Task Missing_branch_returns_null_head_and_empty_items()
+    {
+        var handler = new ScriptedHandler
+        {
+            Respond = _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+        };
+        var options = new CatalogOptions { Organization = "fabrikam", AccessToken = "not-a-real-bearer" };
+        using var http = new HttpClient(handler);
+        var client = new AzureDevOpsClient(http, options);
+
+        Assert.Null(await client.GetHeadCommitAsync("Fabrikam-Fiber-Git", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "missing"));
+        Assert.Empty(await client.ListItemsAsync("Fabrikam-Fiber-Git", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "/", "missing"));
+        Assert.Null(await client.GetItemContentAsync("Fabrikam-Fiber-Git", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "/README.md", "missing"));
+    }
+
+    [Fact]
+    public async Task Follows_continuation_token_and_reads_item_content_variants()
+    {
+        var calls = 0;
+        var handler = new ScriptedHandler
+        {
+            Respond = request =>
+            {
+                var url = request.RequestUri!.AbsoluteUri;
+                if (url.Contains("/_apis/projects", StringComparison.Ordinal))
+                {
+                    calls++;
+                    var page = Json("""
+                        {
+                          "count": 1,
+                          "value": [ { "id": "1", "name": "Fabrikam-Fiber-Git", "state": "wellFormed" } ]
+                        }
+                        """);
+                    if (calls == 1)
+                    {
+                        page.Headers.TryAddWithoutValidation(AzureDevOpsClient.ContinuationTokenHeader, "20");
+                    }
+
+                    return page;
+                }
+
+                if (url.Contains("includeContent=true", StringComparison.Ordinal) && url.Contains("README", StringComparison.Ordinal))
+                {
+                    return Json("""
+                        {
+                          "value": [ { "path": "/README.md", "content": "from-array" } ]
+                        }
+                        """);
+                }
+
+                if (url.Contains("includeContent=true", StringComparison.Ordinal))
+                {
+                    return new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent("plain-text-body", Encoding.UTF8, "text/plain"),
+                    };
+                }
+
+                return new HttpResponseMessage(HttpStatusCode.NotFound);
+            },
+        };
+
+        var options = new CatalogOptions { Organization = "fabrikam", AccessToken = "not-a-real-bearer" };
+        using var http = new HttpClient(handler);
+        var client = new AzureDevOpsClient(http, options);
+
+        var projects = await client.ListProjectsAsync();
+        Assert.Equal(2, projects.Count);
+        Assert.Equal("from-array", await client.GetItemContentAsync("p", "r", "/README.md", "main"));
+        Assert.Equal("plain-text-body", await client.GetItemContentAsync("p", "r", "/Dockerfile", "main"));
+    }
+
     private static HttpResponseMessage Json(string json) => new(HttpStatusCode.OK)
     {
         Content = new StringContent(json, Encoding.UTF8, "application/json"),

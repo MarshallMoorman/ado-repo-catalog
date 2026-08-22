@@ -1,4 +1,5 @@
 using AdoRepoCatalog;
+using AdoRepoCatalog.AzureDevOps;
 using AdoRepoCatalog.Catalog;
 using AdoRepoCatalog.Embedding;
 
@@ -6,7 +7,7 @@ namespace AdoRepoCatalog.Tests;
 
 internal sealed class CatalogTestHost : IDisposable
 {
-    public CatalogTestHost(FakeAzureDevOpsClient client)
+    public CatalogTestHost(IAzureDevOpsClient client)
     {
         Client = client;
         Root = Directory.CreateTempSubdirectory("ado-catalog-test-");
@@ -22,7 +23,9 @@ internal sealed class CatalogTestHost : IDisposable
         Runner = new CatalogRunner(Options, Client, StateStore, NoOpCatalogEmbedder.Instance, Clock, Log);
     }
 
-    public FakeAzureDevOpsClient Client { get; }
+    public IAzureDevOpsClient Client { get; }
+
+    public FakeAzureDevOpsClient Fake => (FakeAzureDevOpsClient)Client;
 
     public DirectoryInfo Root { get; }
 

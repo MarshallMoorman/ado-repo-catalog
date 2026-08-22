@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Extensions.Configuration;
 
 namespace AdoRepoCatalog;
@@ -7,14 +8,17 @@ public static class CatalogConfiguration
     /// <summary>
     /// Precedence (last wins): appsettings.Local.json, user-secrets, environment variables.
     /// </summary>
-    public static CatalogOptions Load(string? basePath = null, IEnumerable<KeyValuePair<string, string?>>? extras = null)
+    public static CatalogOptions Load(
+        string? basePath = null,
+        Assembly? userSecretsAssembly = null,
+        IEnumerable<KeyValuePair<string, string?>>? extras = null)
     {
         basePath ??= Directory.GetCurrentDirectory();
 
         var builder = new ConfigurationBuilder()
             .SetBasePath(basePath)
             .AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false)
-            .AddUserSecrets(typeof(CatalogConfiguration).Assembly, optional: true)
+            .AddUserSecrets(userSecretsAssembly ?? typeof(CatalogConfiguration).Assembly, optional: true)
             .AddEnvironmentVariables()
             .AddEnvironmentVariables(prefix: "ADO_");
 
@@ -65,6 +69,12 @@ public static class CatalogConfiguration
             config["BaseUrl"],
             config["BASEURL"],
             options.BaseUrl) ?? CatalogOptions.DefaultBaseUrl;
+
+        var concurrency = FirstNonEmpty(config["MaxConcurrency"], config["MAXCONCURRENCY"]);
+        if (int.TryParse(concurrency, out var parsedConcurrency))
+        {
+            options.MaxConcurrency = parsedConcurrency;
+        }
 
         return options;
     }

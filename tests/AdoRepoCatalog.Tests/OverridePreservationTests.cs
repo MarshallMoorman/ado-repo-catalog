@@ -22,8 +22,8 @@ public sealed class OverridePreservationTests
         var edited = ReplaceOverride(generated, humanNote);
         File.WriteAllText(pagePath, edited);
 
-        host.Client.SetHead(FabrikamFixture.ContosoDemoId, "main", "5555555555555555555555555555555555555555");
-        host.Client.AddFile(FabrikamFixture.ContosoDemoId, "main", "/README.md",
+        host.Fake.SetHead(FabrikamFixture.ContosoDemoId, "main", "5555555555555555555555555555555555555555");
+        host.Fake.AddFile(FabrikamFixture.ContosoDemoId, "main", "/README.md",
             "Updated fictional purpose: demo checkout API for the contoso catalog.");
 
         var second = await host.Runner.RunAsync();
@@ -54,7 +54,7 @@ public sealed class OverridePreservationTests
             """;
         File.WriteAllText(pagePath, withHeading);
 
-        host.Client.SetHead(FabrikamFixture.FabrikamWebId, "develop", "6666666666666666666666666666666666666666");
+        host.Fake.SetHead(FabrikamFixture.FabrikamWebId, "develop", "6666666666666666666666666666666666666666");
         var second = await host.Runner.RunAsync();
         var refreshed = File.ReadAllText(pagePath);
 

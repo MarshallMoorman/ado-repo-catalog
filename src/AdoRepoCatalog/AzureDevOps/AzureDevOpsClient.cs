@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using AdoRepoCatalog.Infrastructure;
 
 namespace AdoRepoCatalog.AzureDevOps;
 
@@ -29,9 +30,14 @@ public sealed class AzureDevOpsClient : IAzureDevOpsClient
         Configure(_http, options);
     }
 
-    public static HttpClient CreateHttpClient(CatalogOptions options)
+    public static HttpClient CreateHttpClient(
+        CatalogOptions options,
+        IAsyncDelay? delay = null,
+        TimeProvider? timeProvider = null,
+        HttpMessageHandler? innerHandler = null)
     {
-        var http = new HttpClient
+        var throttle = new AdoThrottlingHandler(options, delay, timeProvider, innerHandler ?? new HttpClientHandler());
+        var http = new HttpClient(throttle, disposeHandler: true)
         {
             Timeout = TimeSpan.FromMinutes(2),
         };

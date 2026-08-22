@@ -13,13 +13,13 @@ public sealed class IncrementalSkipTests
         Assert.Equal(2, first.IndexedCount);
         Assert.Equal(0, first.SkippedUnchangedCount);
 
-        host.Client.ResetCallCounts();
+        host.Fake.ResetCallCounts();
         var second = await host.Runner.RunAsync();
 
         Assert.Equal(0, second.IndexedCount);
         Assert.Equal(2, second.SkippedUnchangedCount);
-        Assert.Equal(0, host.Client.GetItemContentCalls);
-        Assert.Equal(0, host.Client.ListItemsCalls);
+        Assert.Equal(0, host.Fake.GetItemContentCalls);
+        Assert.Equal(0, host.Fake.ListItemsCalls);
         Assert.Equal(2, second.Entries.Count);
         Assert.Contains(second.Entries, entry => entry.Name == "contoso-demo");
     }
@@ -30,14 +30,14 @@ public sealed class IncrementalSkipTests
         using var host = new CatalogTestHost(FabrikamFixture.CreateClient());
         await host.Runner.RunAsync();
 
-        host.Client.SetHead(FabrikamFixture.ContosoDemoId, "main", "3333333333333333333333333333333333333333");
-        host.Client.ResetCallCounts();
+        host.Fake.SetHead(FabrikamFixture.ContosoDemoId, "main", "3333333333333333333333333333333333333333");
+        host.Fake.ResetCallCounts();
 
         var second = await host.Runner.RunAsync();
 
         Assert.Equal(1, second.IndexedCount);
         Assert.Equal(1, second.SkippedUnchangedCount);
-        Assert.True(host.Client.GetItemContentCalls > 0);
+        Assert.True(host.Fake.GetItemContentCalls > 0);
         var contoso = Assert.Single(second.Entries, entry => entry.Name == "contoso-demo");
         Assert.Equal("3333333333333333333333333333333333333333", contoso.HeadSha);
     }
@@ -50,12 +50,12 @@ public sealed class IncrementalSkipTests
 
         var page = Directory.EnumerateFiles(host.WikiDirectory, "*contoso-demo.md").Single();
         File.Delete(page);
-        host.Client.ResetCallCounts();
+        host.Fake.ResetCallCounts();
 
         var second = await host.Runner.RunAsync();
 
         Assert.Equal(1, second.IndexedCount);
-        Assert.True(host.Client.GetItemContentCalls > 0);
+        Assert.True(host.Fake.GetItemContentCalls > 0);
         Assert.True(File.Exists(page));
     }
 }

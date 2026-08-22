@@ -1,3 +1,8 @@
+# Coverage output
+coverage/
+coverage.json
+coverage.opencover.xml
+
 # Catalog tool: local secrets, incremental state, generated wiki/json
 appsettings.Local.json
 appsettings.*.Local.json

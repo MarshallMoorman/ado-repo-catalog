@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>AdoRepoCatalog.Cli</RootNamespace>
+    <AssemblyName>AdoRepoCatalog.Cli</AssemblyName>
+    <UserSecretsId>9a7b3c2d-1e0f-4a5b-8c9d-0e1f2a3b4c5d</UserSecretsId>
+    <Description>CLI host for the Azure DevOps repo catalog.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AdoRepoCatalog\AdoRepoCatalog.csproj" />
+  </ItemGroup>
+</Project>

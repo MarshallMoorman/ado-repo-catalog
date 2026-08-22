@@ -2,7 +2,7 @@
 
 Laptop-first Azure DevOps git repository catalog. Isolated tooling only.
 
-The console app walks git repositories through Azure DevOps REST (it never clones history), infers purpose/stack/services from a small set of key files, and writes:
+The console app walks git repositories through Azure DevOps REST (it never clones history, never sparse-checkouts, and never writes back to product remotes), infers purpose/stack/services from a small set of key files, and writes:
 
 1. One markdown wiki page per repository
 2. `catalog.json` for agents
@@ -10,6 +10,14 @@ The console app walks git repositories through Azure DevOps REST (it never clone
 An agent can answer: repo name and URL, purpose, stack, services, functionality, and when to add code in that repo.
 
 This repository must not contain a work PAT, a real Azure DevOps organization name, a company name, or company source. Tests use fictional Microsoft Learn-style names only (`fabrikam`, `contoso-demo`).
+
+## Hard rules (v1)
+
+- The only product is local wiki pages + `catalog.json` (laptop or a configured output directory). No PRs, no `AGENTS.md` writes, no pushes, and no writes of any kind into source/ADO product repos.
+- Never `git clone` product repos. No sparse checkout. REST item/tree fetch only.
+- Working set stays small: one top-level listing, at most one extra shallow folder listing, then a handful of key file contents. Those blobs are discarded after inference. They are not kept on disk.
+- Wiki and state stay small: markdown summaries + JSON metadata. Do not copy source file bodies into the wiki.
+- One configured credential. Do not add extra PATs to dodge rate limits.
 
 ## Requirements
 
@@ -25,7 +33,7 @@ Configuration is read in this order (later sources win): gitignored `appsettings
 From the repository root:
 
 ```bash
-cd src/AdoRepoCatalog
+cd src/AdoRepoCatalog.Cli
 dotnet user-secrets set Organization "<your-ado-org>"
 dotnet user-secrets set PersonalAccessToken "<your-pat>"
 # optional: limit to one project; omit to scan every project
@@ -43,6 +51,7 @@ Equivalent environment variables (also accepted with an `ADO_` prefix, for examp
 | `AccessToken` | Optional Bearer token instead of a PAT |
 | `OutputDirectory` | Default `./out` (gitignored). Prefer a directory outside the repo in pipelines |
 | `StatePath` | Incremental index state. Default `./.ado-catalog/state.json` (gitignored) |
+| `MaxConcurrency` | Repos in flight at once. Default 3, clamped to 2–4 |
 
 Do not commit `appsettings.Local.json`, user-secrets files, or PATs. If you use a local JSON file, keep the token out of git:
 
@@ -58,6 +67,17 @@ Do not commit `appsettings.Local.json`, user-secrets files, or PATs. If you use 
 Wiki pages land in `{OutputDirectory}/wiki/`. `catalog.json` is written next to that folder (`{OutputDirectory}/catalog.json`). Incremental state is `{StatePath}`.
 
 Later this same command can run on an Azure DevOps pipeline using pipeline secrets for the PAT. This tool does not open pull requests into product repositories.
+
+## Rate limits
+
+Azure DevOps TSTU budget is about 200 per user per 5 minutes. The first crawl is the spike; incremental HEAD SHA skip keeps later laptop runs cheap.
+
+The HTTP client:
+
+- Processes 2–4 repos at a time (default 3)
+- Honors `Retry-After`, `X-RateLimit-Delay`, and `X-RateLimit-Remaining`
+- Treats delay headers on HTTP 200 as a wait before the next call
+- Backs off on 429 (Retry-After when present, otherwise exponential delay with jitter)
 
 ## What gets fetched
 
@@ -101,4 +121,10 @@ v1 is wiki + JSON only. `ICatalogEmbedder` is a no-op stub for a later Qdrant / 
 ```bash
 dotnet build
 dotnet test
+```
+
+Coverage for the library project (excludes the thin CLI host):
+
+```bash
+dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=json /p:Include="[AdoRepoCatalog]*"
 ```
