@@ -79,6 +79,29 @@ public sealed class RateLimitTests
             {
                 var ok = Json(HttpStatusCode.OK, """{ "count": 0, "value": [] }""");
                 ok.Headers.TryAddWithoutValidation(AdoThrottlingHandler.RateLimitDelayHeader, "5");
+                ok.Headers.TryAddWithoutValidation(AdoThrottlingHandler.RateLimitRemainingHeader, "12");
+                return ok;
+            },
+        };
+
+        using var http = AzureDevOpsClient.CreateHttpClient(ThrottleOptions(), delay, innerHandler: handler);
+        var client = new AzureDevOpsClient(http, ThrottleOptions());
+        await client.ListProjectsAsync();
+        Assert.Empty(delay.Delays);
+        await client.ListProjectsAsync();
+
+        Assert.Equal(TimeSpan.FromSeconds(5), Assert.Single(delay.Delays));
+    }
+
+    [Fact]
+    public async Task Http_200_with_remaining_zero_waits_even_without_delay_header()
+    {
+        var delay = new RecordingAsyncDelay();
+        var handler = new ScriptedHandler
+        {
+            Respond = _ =>
+            {
+                var ok = Json(HttpStatusCode.OK, """{ "count": 0, "value": [] }""");
                 ok.Headers.TryAddWithoutValidation(AdoThrottlingHandler.RateLimitRemainingHeader, "0");
                 return ok;
             },
@@ -89,7 +112,73 @@ public sealed class RateLimitTests
         await client.ListProjectsAsync();
         await client.ListProjectsAsync();
 
-        Assert.Contains(TimeSpan.FromSeconds(5), delay.Delays);
+        Assert.Contains(TimeSpan.FromSeconds(1), delay.Delays);
+    }
+
+    [Fact]
+    public async Task Http_200_retry_after_is_honored_before_the_next_call()
+    {
+        var delay = new RecordingAsyncDelay();
+        var handler = new ScriptedHandler
+        {
+            Respond = _ =>
+            {
+                var ok = Json(HttpStatusCode.OK, """{ "count": 0, "value": [] }""");
+                ok.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(3));
+                return ok;
+            },
+        };
+
+        using var http = AzureDevOpsClient.CreateHttpClient(ThrottleOptions(), delay, innerHandler: handler);
+        var client = new AzureDevOpsClient(http, ThrottleOptions());
+        await client.ListProjectsAsync();
+        await client.ListProjectsAsync();
+
+        Assert.Contains(TimeSpan.FromSeconds(3), delay.Delays);
+    }
+
+    [Fact]
+    public async Task Retries_429_with_the_same_single_credential()
+    {
+        var auths = new List<string?>();
+        var attempts = 0;
+        var handler = new ScriptedHandler
+        {
+            Respond = request =>
+            {
+                attempts++;
+                auths.Add(request.Headers.Authorization?.ToString());
+                if (attempts == 1)
+                {
+                    return Json(HttpStatusCode.TooManyRequests, """{ "message": "slow down" }""");
+                }
+
+                return Json(HttpStatusCode.OK, """{ "count": 0, "value": [] }""");
+            },
+        };
+
+        var options = ThrottleOptions();
+        using var http = AzureDevOpsClient.CreateHttpClient(options, new RecordingAsyncDelay(), innerHandler: handler);
+        var client = new AzureDevOpsClient(http, options);
+        await client.ListProjectsAsync();
+
+        Assert.Equal(2, attempts);
+        Assert.Single(auths.Distinct(StringComparer.Ordinal));
+        Assert.All(auths, value => Assert.StartsWith("Basic ", value, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Exponential_backoff_adds_non_negative_jitter()
+    {
+        var options = ThrottleOptions();
+        options.RetryJitterRatio = 0.25;
+        using var handler = new AdoThrottlingHandler(options, new RecordingAsyncDelay(), innerHandler: new ScriptedHandler
+        {
+            Respond = _ => Json(HttpStatusCode.OK, "{}"),
+        });
+
+        var wait = handler.ComputeBackoff(0);
+        Assert.InRange(wait, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1.25));
     }
 
     [Fact]
