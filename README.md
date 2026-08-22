@@ -1,6 +1,8 @@
 # ado-repo-catalog
 
-Laptop-first Azure DevOps git repository catalog. Isolated tooling only.
+Laptop-first Azure DevOps git repository catalog. Isolated tooling only. MIT licensed.
+
+Layout: `src/AdoRepoCatalog` (library), `src/AdoRepoCatalog.Cli` (console host), `tests/AdoRepoCatalog.Tests`.
 
 The console app walks git repositories through Azure DevOps REST (it never clones history, never sparse-checkouts, and never writes back to product remotes), infers purpose/stack/services from a small set of key files, and writes:
 
@@ -121,6 +123,7 @@ v1 is wiki + JSON only. `ICatalogEmbedder` is a no-op stub for a later Qdrant / 
 ```bash
 dotnet build
 dotnet test
+dotnet format --verify-no-changes
 ```
 
 Coverage for the library project (excludes the thin CLI host):

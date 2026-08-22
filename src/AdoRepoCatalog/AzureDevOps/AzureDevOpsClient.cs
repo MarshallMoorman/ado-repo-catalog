@@ -112,7 +112,7 @@ public sealed class AzureDevOpsClient : IAzureDevOpsClient
 
         await EnsureSuccessAsync(response, path).ConfigureAwait(false);
         var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        var collection = JsonSerializer.Deserialize<AdoCollection<AdoCommit>>(body, JsonOptions);
+        var collection = JsonSerializer.Deserialize<AdoListResponse<AdoCommit>>(body, JsonOptions);
         var commit = collection?.Value.FirstOrDefault();
         return string.IsNullOrWhiteSpace(commit?.CommitId) ? null : commit.CommitId;
     }
@@ -140,31 +140,31 @@ public sealed class AzureDevOpsClient : IAzureDevOpsClient
 
         await EnsureSuccessAsync(response, path).ConfigureAwait(false);
         var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        var collection = JsonSerializer.Deserialize<AdoCollection<AdoItem>>(body, JsonOptions);
+        var collection = JsonSerializer.Deserialize<AdoListResponse<AdoItem>>(body, JsonOptions);
         return collection?.Value ?? [];
     }
 
     public async Task<string?> GetItemContentAsync(
         string project,
         string repositoryId,
-        string itemPath,
+        string path,
         string branch,
         CancellationToken cancellationToken = default)
     {
-        var path =
+        var relativeUrl =
             $"{Encode(project)}/_apis/git/repositories/{Encode(repositoryId)}/items" +
-            $"?path={Uri.EscapeDataString(itemPath)}" +
+            $"?path={Uri.EscapeDataString(path)}" +
             $"&versionDescriptor.version={Uri.EscapeDataString(branch)}" +
             $"&includeContent=true" +
             $"&api-version={_options.ApiVersion}";
 
-        using var response = await _http.GetAsync(path, cancellationToken).ConfigureAwait(false);
+        using var response = await _http.GetAsync(relativeUrl, cancellationToken).ConfigureAwait(false);
         if (response.StatusCode is HttpStatusCode.NotFound)
         {
             return null;
         }
 
-        await EnsureSuccessAsync(response, path).ConfigureAwait(false);
+        await EnsureSuccessAsync(response, relativeUrl).ConfigureAwait(false);
         var media = response.Content.Headers.ContentType?.MediaType ?? "";
         var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
@@ -199,7 +199,7 @@ public sealed class AzureDevOpsClient : IAzureDevOpsClient
             using var response = await _http.GetAsync(url, cancellationToken).ConfigureAwait(false);
             await EnsureSuccessAsync(response, url).ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            var collection = JsonSerializer.Deserialize<AdoCollection<T>>(body, JsonOptions);
+            var collection = JsonSerializer.Deserialize<AdoListResponse<T>>(body, JsonOptions);
             if (collection?.Value is { Count: > 0 })
             {
                 results.AddRange(collection.Value);

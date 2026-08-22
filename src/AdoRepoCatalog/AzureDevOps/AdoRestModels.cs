@@ -2,8 +2,8 @@ using System.Text.Json.Serialization;
 
 namespace AdoRepoCatalog.AzureDevOps;
 
-/// <summary>Official Azure DevOps collection wrapper ({ count, value }).</summary>
-public sealed class AdoCollection<T>
+/// <summary>Official Azure DevOps list wrapper ({ count, value }).</summary>
+public sealed class AdoListResponse<T>
 {
     [JsonPropertyName("count")]
     public int Count { get; set; }
