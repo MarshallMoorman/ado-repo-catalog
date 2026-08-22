@@ -13,6 +13,10 @@ public sealed class IncrementalSkipTests
         Assert.Equal(2, first.IndexedCount);
         Assert.Equal(0, first.SkippedUnchangedCount);
 
+        var wikiBefore = Directory.EnumerateFiles(host.WikiDirectory, "*.md")
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToDictionary(path => path, File.ReadAllText, StringComparer.Ordinal);
+
         host.Fake.ResetCallCounts();
         var second = await host.Runner.RunAsync();
 
@@ -22,6 +26,11 @@ public sealed class IncrementalSkipTests
         Assert.Equal(0, host.Fake.ListItemsCalls);
         Assert.Equal(2, second.Entries.Count);
         Assert.Contains(second.Entries, entry => entry.Name == "contoso-demo");
+
+        foreach (var (path, before) in wikiBefore)
+        {
+            Assert.Equal(before, File.ReadAllText(path));
+        }
     }
 
     [Fact]

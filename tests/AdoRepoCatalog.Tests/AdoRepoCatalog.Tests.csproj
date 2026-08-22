@@ -3,6 +3,12 @@
     <RootNamespace>AdoRepoCatalog.Tests</RootNamespace>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <CollectCoverage>true</CollectCoverage>
+    <CoverletOutputFormat>json,cobertura</CoverletOutputFormat>
+    <CoverletOutput>$([System.IO.Path]::Combine($(MSBuildThisFileDirectory), "TestResults", "coverage"))</CoverletOutput>
+    <Include>[AdoRepoCatalog]*</Include>
+    <Exclude>[AdoRepoCatalog.Tests]*</Exclude>
+    <ExcludeByFile>**/obj/**/*.cs</ExcludeByFile>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4">

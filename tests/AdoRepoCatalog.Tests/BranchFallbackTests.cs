@@ -59,6 +59,9 @@ public sealed class BranchFallbackTests
     {
         var candidates = BranchResolver.Candidates("refs/heads/release");
         Assert.Equal("release", candidates[0]);
+        Assert.Equal(
+            new[] { "develop", "dev", "Develop", "Dev", "main", "master", "Main", "Master" },
+            BranchResolver.FallbackOrder);
         Assert.Equal(BranchResolver.FallbackOrder, candidates.Skip(1));
     }
 }

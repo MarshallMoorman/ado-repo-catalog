@@ -126,8 +126,4 @@ dotnet test
 dotnet format --verify-no-changes
 ```
 
-Coverage for the library project (excludes the thin CLI host):
-
-```bash
-dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=json /p:Include="[AdoRepoCatalog]*"
-```
+`dotnet test` reports coverlet line/branch/method coverage for the `AdoRepoCatalog` library (the CLI host is excluded).

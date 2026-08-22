@@ -214,6 +214,11 @@ public sealed class RateLimitTests
     [Fact]
     public void Max_concurrency_clamps_to_the_2_to_4_band()
     {
+        using var handler = new AdoThrottlingHandler(new CatalogOptions { MaxConcurrency = 3 }, new RecordingAsyncDelay(), innerHandler: new ScriptedHandler
+        {
+            Respond = _ => Json(HttpStatusCode.OK, "{}"),
+        });
+        Assert.Equal(3, handler.EffectiveMaxConcurrency);
         Assert.Equal(3, new CatalogOptions().EffectiveMaxConcurrency);
         Assert.Equal(2, new CatalogOptions { MaxConcurrency = 1 }.EffectiveMaxConcurrency);
         Assert.Equal(4, new CatalogOptions { MaxConcurrency = 99 }.EffectiveMaxConcurrency);

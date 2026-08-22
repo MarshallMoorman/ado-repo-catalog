@@ -1,6 +1,7 @@
 using AdoRepoCatalog;
 using AdoRepoCatalog.AzureDevOps;
 using AdoRepoCatalog.Catalog;
+using AdoRepoCatalog.Infrastructure;
 
 namespace AdoRepoCatalog.Tests;
 
@@ -139,6 +140,59 @@ public sealed class LibraryUnitTests
         }, DateTimeOffset.UtcNow);
         Assert.Contains("python", py.Languages);
         Assert.Contains("fastapi", py.Frameworks);
+    }
+
+    [Fact]
+    public void Inference_uses_agents_and_appsettings_when_readme_is_empty()
+    {
+        var repo = new AdoRepository
+        {
+            Name = "contoso-demo",
+            Project = new AdoProject { Name = "Fabrikam-Fiber-Git" },
+            RemoteUrl = "https://dev.azure.com/fabrikam/Fabrikam-Fiber-Git/_git/contoso-demo",
+        };
+
+        var entry = RepoInference.Infer(new RepoSnapshot
+        {
+            Repository = repo,
+            Branch = "main",
+            HeadSha = "1",
+            TreeEntries = [FabrikamFixture.Folder("/src")],
+            Files = new Dictionary<string, string>
+            {
+                ["/README.md"] = "\n",
+                ["/AGENTS.md"] = "Route fictional catalog work to this repository when the storefront copy changes.",
+                ["/appsettings.json"] = """{"ServiceBus":{},"Redis":{}}""",
+                ["/worker.csproj"] = """<Project Sdk="Microsoft.NET.Sdk.Worker"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>""",
+            },
+        }, DateTimeOffset.UtcNow);
+
+        Assert.Contains("storefront copy", entry.Purpose);
+        Assert.Contains("dotnet-worker", entry.Frameworks);
+        Assert.Contains("servicebus", entry.Services);
+        Assert.Contains("cache", entry.Services);
+    }
+
+    [Fact]
+    public void Score_without_signals_stays_low()
+    {
+        Assert.Equal(0.08, RepoInference.Score([]));
+        Assert.True(RepoInference.Score([]) < RepoInference.LowConfidenceThreshold);
+    }
+
+    [Fact]
+    public void Key_file_selector_recognizes_shallow_scan_folders()
+    {
+        Assert.True(KeyFileSelector.IsShallowScanFolder("src"));
+        Assert.True(KeyFileSelector.IsShallowScanFolder("API"));
+        Assert.False(KeyFileSelector.IsShallowScanFolder("docs"));
+    }
+
+    [Fact]
+    public async Task System_delay_completes_immediately_for_zero()
+    {
+        Assert.NotNull(SystemAsyncDelay.Instance);
+        await SystemAsyncDelay.Instance.Delay(TimeSpan.Zero);
     }
 
     [Fact]

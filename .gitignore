@@ -2,6 +2,8 @@
 coverage/
 coverage.json
 coverage.opencover.xml
+coverage.cobertura.xml
+**/TestResults/
 
 # Catalog tool: local secrets, incremental state, generated wiki/json
 appsettings.Local.json
