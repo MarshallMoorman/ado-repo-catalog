@@ -24,6 +24,8 @@ public sealed class IncrementalSkipTests
         Assert.Equal(2, second.SkippedUnchangedCount);
         Assert.Equal(0, host.Fake.GetItemContentCalls);
         Assert.Equal(0, host.Fake.ListItemsCalls);
+        Assert.Equal(0, host.Fake.GetRepositoryCalls);
+        Assert.Equal(2, host.Fake.GetHeadCommitCalls);
         Assert.Equal(2, second.Entries.Count);
         Assert.Contains(second.Entries, entry => entry.Name == "contoso-demo");
 

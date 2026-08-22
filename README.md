@@ -73,7 +73,7 @@ The same command can run in an Azure DevOps pipeline with the PAT stored as a se
 
 ## Rate limits
 
-Azure DevOps TSTU budget is about 200 per user per 5 minutes. The first full crawl is the expensive pass; later runs skip repos whose default-branch HEAD SHA has not changed.
+Azure DevOps TSTU budget is about 200 per user per 5 minutes. The first full crawl is the expensive pass. Later runs skip a repo when HEAD SHA is unchanged and a wiki page already exists: the list payload plus one commit GET is enough. Skipped repos do not fetch items, trees, or file contents.
 
 - 2–4 repositories at a time (default 3)
 - Honor `Retry-After`, `X-RateLimit-Delay`, and `X-RateLimit-Remaining`
@@ -86,10 +86,10 @@ Official `dev.azure.com` REST 7.1 only:
 
 - `GET {org}/_apis/projects`
 - `GET {org}/{project}/_apis/git/repositories`
-- `GET {org}/{project}/_apis/git/repositories/{id}`
+- `GET {org}/{project}/_apis/git/repositories/{id}` (only when the list payload has no usable default branch / HEAD)
 - `GET .../commits?searchCriteria.$top=1&searchCriteria.itemVersion.version={branch}`
-- `GET .../items?scopePath=/&recursionLevel=OneLevel&versionDescriptor.version={branch}`
-- Item content for key files only
+- `GET .../items?scopePath=/&recursionLevel=OneLevel&versionDescriptor.version={branch}` (index path only)
+- Item content for key files only (index path only)
 
 Key files when present: `README*`, `AGENTS.md`, `*.sln`, `*.csproj`, `*pipeline*` / `azure-pipelines*.yml`, `Dockerfile*`, `package.json`, `go.mod`, `pyproject.toml`, `appsettings*.json`, and top-level `Program.cs` / `*Controller.cs`. One extra one-level listing of `src/` (or similar) if the root listing shows it.
 
@@ -113,4 +113,4 @@ dotnet test
 dotnet format --verify-no-changes
 ```
 
-`dotnet test` prints coverlet coverage for the `AdoRepoCatalog` library.
+`dotnet test` prints coverlet coverage for the `AdoRepoCatalog` library. GitHub Actions runs restore, `dotnet format --verify-no-changes`, and `dotnet test` on pull requests and on pushes to `main`. The workflow has no secrets, organization names, or PATs.

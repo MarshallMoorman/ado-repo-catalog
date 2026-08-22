@@ -14,6 +14,9 @@ public sealed class IndexedRepoState
     [JsonPropertyName("headSha")]
     public string HeadSha { get; set; } = "";
 
+    [JsonPropertyName("branch")]
+    public string Branch { get; set; } = "";
+
     [JsonPropertyName("wikiFileName")]
     public string WikiFileName { get; set; } = "";
 

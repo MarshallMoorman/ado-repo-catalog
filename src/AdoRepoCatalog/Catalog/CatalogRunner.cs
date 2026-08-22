@@ -155,40 +155,69 @@ public sealed class CatalogRunner
         object gate,
         CancellationToken cancellationToken)
     {
-        var details = await _client.GetRepositoryAsync(project.Name, listed.Id, cancellationToken)
-            .ConfigureAwait(false);
+        var wikiFileName = WikiPageWriter.FileName(project.Name, listed.Name);
+        var wikiFullPath = Path.Combine(_options.WikiDirectory, wikiFileName);
+        var relativeWikiPath = Path.Combine("wiki", wikiFileName).Replace('\\', '/');
+
+        IndexedRepoState? previous;
+        lock (gate)
+        {
+            state.Repos.TryGetValue(listed.Id, out previous);
+        }
+
+        var probeBranch = BranchResolver.StripRefsHeads(listed.DefaultBranch);
+        if (string.IsNullOrWhiteSpace(probeBranch))
+        {
+            probeBranch = previous?.Branch;
+        }
+
+        string? headSha = null;
+        if (!string.IsNullOrWhiteSpace(probeBranch))
+        {
+            headSha = await _client.GetHeadCommitAsync(project.Name, listed.Id, probeBranch, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (!string.IsNullOrWhiteSpace(headSha) &&
+            ShouldSkip(previous, headSha, wikiFullPath) &&
+            WikiPageWriter.TryReadEntry(wikiFullPath, relativeWikiPath, out var existing))
+        {
+            WriteLog($"[skip] {project.Name}/{listed.Name} @ {headSha}", gate);
+            return (existing, Skipped: true);
+        }
+
+        var details = listed;
         details.Project ??= project;
         if (string.IsNullOrWhiteSpace(details.Project.Name))
         {
             details.Project.Name = project.Name;
         }
 
-        var resolved = await BranchResolver.ResolveAsync(
-                _client,
-                project.Name,
-                details.Id,
-                details.DefaultBranch,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        var branch = resolved?.Name ?? BranchResolver.StripRefsHeads(details.DefaultBranch) ?? "";
-        var headSha = resolved?.Sha ?? "";
-        var wikiFileName = WikiPageWriter.FileName(project.Name, details.Name);
-        var wikiFullPath = Path.Combine(_options.WikiDirectory, wikiFileName);
-        var relativeWikiPath = Path.Combine("wiki", wikiFileName).Replace('\\', '/');
-
-        if (ShouldSkip(state, details.Id, headSha, wikiFullPath, gate))
+        var branch = probeBranch ?? "";
+        if (string.IsNullOrWhiteSpace(branch) || string.IsNullOrWhiteSpace(headSha))
         {
-            WriteLog($"[skip] {project.Name}/{details.Name} @ {headSha}", gate);
-            if (WikiPageWriter.TryReadEntry(wikiFullPath, relativeWikiPath, out var existing))
+            details = await _client.GetRepositoryAsync(project.Name, listed.Id, cancellationToken)
+                .ConfigureAwait(false);
+            details.Project ??= project;
+            if (string.IsNullOrWhiteSpace(details.Project.Name))
             {
-                return (existing, Skipped: true);
+                details.Project.Name = project.Name;
             }
+
+            var resolved = await BranchResolver.ResolveAsync(
+                    _client,
+                    project.Name,
+                    details.Id,
+                    details.DefaultBranch ?? listed.DefaultBranch,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            branch = resolved?.Name ?? BranchResolver.StripRefsHeads(details.DefaultBranch) ?? "";
+            headSha = resolved?.Sha ?? "";
         }
 
         WriteLog($"[index] {project.Name}/{details.Name} branch={branch} sha={headSha}", gate);
 
-        var snapshot = await FetchSnapshotAsync(project.Name, details, branch, headSha, cancellationToken)
+        var snapshot = await FetchSnapshotAsync(project.Name, details, branch, headSha ?? "", cancellationToken)
             .ConfigureAwait(false);
         var entry = RepoInference.Infer(snapshot, _clock.GetUtcNow());
         entry.WikiPath = relativeWikiPath;
@@ -197,14 +226,15 @@ public sealed class CatalogRunner
             entry.DefaultBranch = branch;
         }
 
-        var previous = File.Exists(wikiFullPath) ? File.ReadAllText(wikiFullPath) : null;
-        WikiPageWriter.Write(_options.WikiDirectory, entry, previous);
+        var existingPage = File.Exists(wikiFullPath) ? File.ReadAllText(wikiFullPath) : null;
+        WikiPageWriter.Write(_options.WikiDirectory, entry, existingPage);
 
         lock (gate)
         {
             state.Repos[details.Id] = new IndexedRepoState
             {
-                HeadSha = headSha,
+                HeadSha = headSha ?? "",
+                Branch = branch,
                 WikiFileName = wikiFileName,
                 IndexedAt = entry.LastIndexed,
             };
@@ -221,20 +251,11 @@ public sealed class CatalogRunner
         }
     }
 
-    private static bool ShouldSkip(IndexState state, string repoId, string headSha, string wikiFullPath, object gate)
+    private static bool ShouldSkip(IndexedRepoState? previous, string headSha, string wikiFullPath)
     {
-        if (!File.Exists(wikiFullPath))
+        if (previous is null || !File.Exists(wikiFullPath))
         {
             return false;
-        }
-
-        IndexedRepoState? previous;
-        lock (gate)
-        {
-            if (!state.Repos.TryGetValue(repoId, out previous))
-            {
-                return false;
-            }
         }
 
         if (string.IsNullOrWhiteSpace(headSha) || string.IsNullOrWhiteSpace(previous.HeadSha))

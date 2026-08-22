@@ -46,11 +46,14 @@ public sealed class CatalogRunnerEdgeTests
         loaded.Repos["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"] = new IndexedRepoState
         {
             HeadSha = "1111111111111111111111111111111111111111",
+            Branch = "develop",
             WikiFileName = "fabrikam-fiber-git-contoso-demo.md",
         };
         await store.SaveAsync(loaded);
         var again = await store.LoadAsync();
-        Assert.Equal("1111111111111111111111111111111111111111", again.Repos["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"].HeadSha);
+        var stored = again.Repos["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"];
+        Assert.Equal("1111111111111111111111111111111111111111", stored.HeadSha);
+        Assert.Equal("develop", stored.Branch);
         Directory.Delete(Path.GetDirectoryName(path)!, recursive: true);
     }
 
