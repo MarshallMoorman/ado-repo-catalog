@@ -271,7 +271,9 @@ public sealed class CatalogRunner
             .ConfigureAwait(false);
         tree.AddRange(root);
 
-        var extraFolder = KeyFileSelector.ChooseShallowFolder(root);
+        var extraFolder = WorkingSetLimits.MaxExtraShallowFolders > 0
+            ? KeyFileSelector.ChooseShallowFolder(root)
+            : null;
         if (extraFolder is not null)
         {
             var extra = await _client.ListItemsAsync(

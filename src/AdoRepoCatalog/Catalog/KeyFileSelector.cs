@@ -4,7 +4,7 @@ namespace AdoRepoCatalog.Catalog;
 
 public static class KeyFileSelector
 {
-    public const int MaxFilesToFetch = 30;
+    public const int MaxFilesToFetch = WorkingSetLimits.MaxKeyFilesPerRepo;
 
     private static readonly string[] ShallowFolderPriority =
     [

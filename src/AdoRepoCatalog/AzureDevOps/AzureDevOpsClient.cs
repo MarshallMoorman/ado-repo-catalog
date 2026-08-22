@@ -237,8 +237,9 @@ public sealed class AzureDevOpsClient : IAzureDevOpsClient
             return null;
         }
 
-        const int maxChars = 128 * 1024;
-        return content.Length <= maxChars ? content : content[..maxChars];
+        return content.Length <= WorkingSetLimits.MaxFileContentChars
+            ? content
+            : content[..WorkingSetLimits.MaxFileContentChars];
     }
 
     private static async Task EnsureSuccessAsync(HttpResponseMessage response, string path)

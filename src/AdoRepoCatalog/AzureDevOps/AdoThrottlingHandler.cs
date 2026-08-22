@@ -42,6 +42,12 @@ public sealed class AdoThrottlingHandler : DelegatingHandler
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
+        if (request.Method != HttpMethod.Get)
+        {
+            throw new InvalidOperationException(
+                "This catalog is read-only. Only HTTP GET against Azure DevOps REST is allowed.");
+        }
+
         await _concurrency.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {

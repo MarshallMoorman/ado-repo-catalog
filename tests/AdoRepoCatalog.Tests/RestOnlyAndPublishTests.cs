@@ -23,7 +23,37 @@ public sealed class RestOnlyAndPublishTests
         Assert.DoesNotContain(
             typeof(IAzureDevOpsClient).GetMethods(),
             method => method.Name.Contains("Clone", StringComparison.OrdinalIgnoreCase) ||
-                      method.Name.Contains("Checkout", StringComparison.OrdinalIgnoreCase));
+                      method.Name.Contains("Checkout", StringComparison.OrdinalIgnoreCase) ||
+                      method.Name.Contains("Push", StringComparison.OrdinalIgnoreCase) ||
+                      method.Name.Contains("Write", StringComparison.OrdinalIgnoreCase) ||
+                      method.Name.Contains("Create", StringComparison.OrdinalIgnoreCase) ||
+                      method.Name.Contains("PullRequest", StringComparison.OrdinalIgnoreCase));
+
+        foreach (var file in sources)
+        {
+            var text = File.ReadAllText(file);
+            Assert.DoesNotContain("PostAsync", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("PutAsync", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("PatchAsync", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("DeleteAsync", text, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Fixture_repos_are_tiny_and_fictional()
+    {
+        var client = FabrikamFixture.CreateClient();
+        FabrikamFixture.AddEmptyNotesRepo(client);
+
+        Assert.Equal("fabrikam", FabrikamFixture.Organization);
+        Assert.All(client.Repositories, repo =>
+            Assert.StartsWith("https://dev.azure.com/fabrikam/", repo.RemoteUrl, StringComparison.OrdinalIgnoreCase));
+
+        foreach (var files in client.ContentByRepoBranchPath.Values.SelectMany(branches => branches.Values))
+        {
+            Assert.InRange(files.Count, 1, 10);
+            Assert.All(files.Values, content => Assert.True(content.Length <= 800, content));
+        }
     }
 
     [Fact]
@@ -63,6 +93,17 @@ public sealed class RestOnlyAndPublishTests
         Assert.DoesNotContain("WebApplication", state);
         Assert.DoesNotContain("FROM mcr.microsoft.com", state);
         Assert.Contains("headSha", state);
+        Assert.DoesNotContain("content", state, StringComparison.OrdinalIgnoreCase);
+
+        var catalog = await File.ReadAllTextAsync(host.CatalogJsonPath);
+        Assert.DoesNotContain("WebApplication.CreateBuilder", catalog);
+        Assert.DoesNotContain("var builder", catalog);
+        using var document = System.Text.Json.JsonDocument.Parse(catalog);
+        foreach (var item in document.RootElement.EnumerateArray())
+        {
+            Assert.False(item.TryGetProperty("generatedFromFiles", out _));
+            Assert.False(item.TryGetProperty("purpose", out _));
+        }
     }
 
     private static string FindRepoRoot()

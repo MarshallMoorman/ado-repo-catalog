@@ -1,5 +1,9 @@
 namespace AdoRepoCatalog.AzureDevOps;
 
+/// <summary>
+/// Read-only Azure DevOps REST access. Implementations must not write to remotes,
+/// open PRs, clone git history, or persist fetched file blobs.
+/// </summary>
 public interface IAzureDevOpsClient
 {
     Task<IReadOnlyList<AdoProject>> ListProjectsAsync(CancellationToken cancellationToken = default);

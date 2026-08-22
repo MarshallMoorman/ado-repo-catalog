@@ -110,6 +110,19 @@ public sealed class RateLimitTests
     }
 
     [Fact]
+    public async Task Rejects_non_get_requests()
+    {
+        var handler = new ScriptedHandler
+        {
+            Respond = _ => Json(HttpStatusCode.OK, """{ "count": 0, "value": [] }"""),
+        };
+        using var http = AzureDevOpsClient.CreateHttpClient(ThrottleOptions(), new RecordingAsyncDelay(), innerHandler: handler);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => http.PostAsync("_apis/projects?api-version=7.1", new StringContent("{}")));
+        Assert.Contains("read-only", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Max_concurrency_clamps_to_the_2_to_4_band()
     {
         Assert.Equal(3, new CatalogOptions().EffectiveMaxConcurrency);
