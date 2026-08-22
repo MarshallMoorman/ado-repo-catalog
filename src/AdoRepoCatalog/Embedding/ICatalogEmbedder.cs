@@ -3,8 +3,8 @@ using AdoRepoCatalog.Catalog;
 namespace AdoRepoCatalog.Embedding;
 
 /// <summary>
-/// v1 stub. Later implementations may embed generated wiki pages (never source)
-/// into Qdrant or Azure AI Search. Must not block catalog generation.
+/// Optional embedder for generated wiki pages (never source). The default
+/// implementation is a no-op so catalog generation does not depend on a vector store.
 /// </summary>
 public interface ICatalogEmbedder
 {

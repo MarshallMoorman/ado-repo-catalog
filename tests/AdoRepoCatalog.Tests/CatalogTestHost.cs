@@ -54,7 +54,7 @@ internal sealed class CatalogTestHost : IDisposable
         }
         catch (IOException)
         {
-            // temp cleanup is best-effort
+            // The test directory may already be gone.
         }
     }
 }

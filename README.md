@@ -1,61 +1,58 @@
 # ado-repo-catalog
 
-Laptop-first Azure DevOps git repository catalog. Isolated tooling only. MIT licensed.
+A .NET 10 console tool that catalogs Azure DevOps git repositories for humans and agents. It talks to official REST APIs only: it never clones product repos, never sparse-checkouts, and never writes back to those remotes.
 
-Layout: `src/AdoRepoCatalog` (library), `src/AdoRepoCatalog.Cli` (console host), `tests/AdoRepoCatalog.Tests`.
+For each repository it writes:
 
-The console app walks git repositories through Azure DevOps REST (it never clones history, never sparse-checkouts, and never writes back to product remotes), infers purpose/stack/services from a small set of key files, and writes:
+1. One markdown wiki page (purpose, stack, services, when to add code here)
+2. `catalog.json` next to the wiki folder
 
-1. One markdown wiki page per repository
-2. `catalog.json` for agents
+Tests use fictional Microsoft Learn names only (`fabrikam`, `contoso-demo`). This repository must not contain a work PAT, a real organization name, or company source.
 
-An agent can answer: repo name and URL, purpose, stack, services, functionality, and when to add code in that repo.
+**Layout:** `src/AdoRepoCatalog` (library), `src/AdoRepoCatalog.Cli` (host), `tests/AdoRepoCatalog.Tests`.
 
-This repository must not contain a work PAT, a real Azure DevOps organization name, a company name, or company source. Tests use fictional Microsoft Learn-style names only (`fabrikam`, `contoso-demo`).
+**License:** [MIT](LICENSE)
 
-## Hard rules (v1)
+## Safety
 
-- The only product is local wiki pages + `catalog.json` (laptop or a configured output directory). No PRs, no `AGENTS.md` writes, no pushes, and no writes of any kind into source/ADO product repos.
-- Never `git clone` product repos. No sparse checkout. REST item/tree fetch only.
-- Working set stays small: one top-level listing, at most one extra shallow folder listing, then a handful of key file contents. Those blobs are discarded after inference. They are not kept on disk.
-- Wiki and state stay small: markdown summaries + JSON metadata. Do not copy source file bodies into the wiki.
+- Read-only HTTP GET against Azure DevOps REST. No PRs, no `AGENTS.md` writes, no pushes into product repos.
+- No `git clone` and no sparse checkout. One top-level listing, at most one extra shallow folder, then a handful of key files. Fetched bodies are discarded after inference.
+- Wiki and state are markdown + JSON metadata. Source file bodies are not copied into the wiki.
 - One configured credential. Do not add extra PATs to dodge rate limits.
 
 ## Requirements
 
-- .NET 10 SDK
+- [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - An Azure DevOps personal access token with:
-  - **Code (Read)** — list repositories, commits, and file contents
-  - **Project (Read)** — list projects
+  - **Code (Read)** — repositories, commits, and file contents
+  - **Project (Read)** — project list
 
-## Laptop run
+## Run on a laptop
 
-Configuration is read in this order (later sources win): gitignored `appsettings.Local.json`, .NET user-secrets, then environment variables.
-
-From the repository root:
+Configuration is loaded in this order (later sources win): gitignored `appsettings.Local.json`, .NET user-secrets, then environment variables.
 
 ```bash
 cd src/AdoRepoCatalog.Cli
 dotnet user-secrets set Organization "<your-ado-org>"
 dotnet user-secrets set PersonalAccessToken "<your-pat>"
-# optional: limit to one project; omit to scan every project
+# optional; omit to scan every project
 # dotnet user-secrets set Project "<project>"
 dotnet run --project . -- --output ../../out
 ```
 
-Equivalent environment variables (also accepted with an `ADO_` prefix, for example `ADO_ORGANIZATION`):
+The same keys work as environment variables, including an `ADO_` prefix (`ADO_ORGANIZATION`, `ADO_PAT` / `ADO_PERSONALACCESSTOKEN`, `ADO_PROJECT`, `ADO_OUTPUTDIRECTORY`, `ADO_STATEPATH`, `ADO_MAXCONCURRENCY`).
 
 | Key | Meaning |
 | --- | --- |
 | `Organization` | Azure DevOps organization name (not a URL) |
 | `Project` | Optional. Empty = scan all projects |
-| `PersonalAccessToken` | PAT sent as HTTP Basic with an empty username |
+| `PersonalAccessToken` | PAT as HTTP Basic with an empty username |
 | `AccessToken` | Optional Bearer token instead of a PAT |
-| `OutputDirectory` | Default `./out` (gitignored). Prefer a directory outside the repo in pipelines |
-| `StatePath` | Incremental index state. Default `./.ado-catalog/state.json` (gitignored) |
+| `OutputDirectory` | Default `./out` (gitignored). Prefer a directory outside the repo in a pipeline |
+| `StatePath` | Incremental index. Default `./.ado-catalog/state.json` (gitignored) |
 | `MaxConcurrency` | Repos in flight at once. Default 3, clamped to 2–4 |
 
-Do not commit `appsettings.Local.json`, user-secrets files, or PATs. If you use a local JSON file, keep the token out of git:
+`appsettings.Local.json` is gitignored. Never commit a PAT or a real organization name. A local file looks like:
 
 ```json
 {
@@ -66,57 +63,47 @@ Do not commit `appsettings.Local.json`, user-secrets files, or PATs. If you use 
 }
 ```
 
-Wiki pages land in `{OutputDirectory}/wiki/`. `catalog.json` is written next to that folder (`{OutputDirectory}/catalog.json`). Incremental state is `{StatePath}`.
+**Output**
 
-Later this same command can run on an Azure DevOps pipeline using pipeline secrets for the PAT. This tool does not open pull requests into product repositories.
+- Wiki pages: `{OutputDirectory}/wiki/{project}-{repo}.md`
+- Agent catalog: `{OutputDirectory}/catalog.json`
+- Incremental state: `{StatePath}`
+
+The same command can run in an Azure DevOps pipeline with the PAT stored as a secret. It does not open pull requests into product repositories.
 
 ## Rate limits
 
-Azure DevOps TSTU budget is about 200 per user per 5 minutes. The first crawl is the spike; incremental HEAD SHA skip keeps later laptop runs cheap.
+Azure DevOps TSTU budget is about 200 per user per 5 minutes. The first full crawl is the expensive pass; later runs skip repos whose default-branch HEAD SHA has not changed.
 
-The HTTP client:
+- 2–4 repositories at a time (default 3)
+- Honor `Retry-After`, `X-RateLimit-Delay`, and `X-RateLimit-Remaining`
+- Delay headers on HTTP 200 still wait before the next call
+- HTTP 429: use `Retry-After` when present, otherwise exponential backoff with jitter
 
-- Processes 2–4 repos at a time (default 3)
-- Honors `Retry-After`, `X-RateLimit-Delay`, and `X-RateLimit-Remaining`
-- Treats delay headers on HTTP 200 as a wait before the next call
-- Backs off on 429 (Retry-After when present, otherwise exponential delay with jitter)
+## What it fetches
 
-## What gets fetched
-
-Official `dev.azure.com` REST 7.1 endpoints only:
+Official `dev.azure.com` REST 7.1 only:
 
 - `GET {org}/_apis/projects`
 - `GET {org}/{project}/_apis/git/repositories`
-- `GET {org}/{project}/_apis/git/repositories/{id}` (default branch)
+- `GET {org}/{project}/_apis/git/repositories/{id}`
 - `GET .../commits?searchCriteria.$top=1&searchCriteria.itemVersion.version={branch}`
 - `GET .../items?scopePath=/&recursionLevel=OneLevel&versionDescriptor.version={branch}`
 - Item content for key files only
 
-Key files when present: `README*`, `AGENTS.md`, `*.sln`, `*.csproj`, `*pipeline*` / `azure-pipelines*.yml`, `Dockerfile*`, `package.json`, `go.mod`, `pyproject.toml`, `appsettings*.json`, and top-level `Program.cs` / `*Controller.cs`. If the root listing shows `src/` (or a similar shallow folder), one extra one-level listing is fetched. The tree is never walked fully.
+Key files when present: `README*`, `AGENTS.md`, `*.sln`, `*.csproj`, `*pipeline*` / `azure-pipelines*.yml`, `Dockerfile*`, `package.json`, `go.mod`, `pyproject.toml`, `appsettings*.json`, and top-level `Program.cs` / `*Controller.cs`. One extra one-level listing of `src/` (or similar) if the root listing shows it.
 
-## Incremental index
-
-State maps repository id → last indexed default-branch HEAD SHA. Unchanged SHAs skip a repo when its wiki page still exists. A SHA change or a missing page always refreshes.
-
-## Branch resolution
-
-1. Repository `defaultBranch` (with `refs/heads/` stripped)
-2. Fallback order: `develop`, `dev`, `Develop`, `Dev`, `main`, `master`, `Main`, `Master`
-3. First branch that has a commit or an items listing
-
-The branch that was used is recorded on the wiki page and in `catalog.json`.
+Branch used, in order: repository `defaultBranch` (with `refs/heads/` stripped), then `develop`, `dev`, `Develop`, `Dev`, `main`, `master`, `Main`, `Master`.
 
 ## Wiki pages and catalog.json
 
-Each page uses a safe `{project}-{repo}` slug, YAML frontmatter (`name`, `project`, `remoteUrl`, `defaultBranch`, `headSha`, `languages`, `frameworks`, `services`, `confidence`, `lowConfidence`, `lastIndexed`, `whenToWriteHere`), and sections for purpose, stack, services, routing guidance, generated file list, and a human override block.
+Each page has YAML frontmatter (`name`, `project`, `remoteUrl`, `defaultBranch`, `headSha`, `languages`, `frameworks`, `services`, `confidence`, `lowConfidence`, `lastIndexed`, `whenToWriteHere`) plus sections for purpose, stack, services, routing guidance, generated file list, and a human override block.
 
-Pages are published immediately. Low confidence is a frontmatter flag plus a short note, not a hold.
-
-On refresh, `<!-- OVERRIDE:START -->` … `<!-- OVERRIDE:END -->` (or a `## Human override` section) is preserved verbatim. The rest of the page is regenerated.
+Pages publish immediately. Low confidence is a flag and a short note, not a hold. On refresh, `<!-- OVERRIDE:START -->` … `<!-- OVERRIDE:END -->` (or `## Human override`) is kept verbatim.
 
 `catalog.json` is an array of the same frontmatter fields plus `wikiPath`.
 
-v1 is wiki + JSON only. `ICatalogEmbedder` is a no-op stub for a later Qdrant / Azure AI Search embed of wiki pages (not source).
+`ICatalogEmbedder` is a no-op reserved for embedding wiki pages later (never source).
 
 ## Build and test
 
@@ -126,4 +113,4 @@ dotnet test
 dotnet format --verify-no-changes
 ```
 
-`dotnet test` reports coverlet line/branch/method coverage for the `AdoRepoCatalog` library (the CLI host is excluded).
+`dotnet test` prints coverlet coverage for the `AdoRepoCatalog` library.

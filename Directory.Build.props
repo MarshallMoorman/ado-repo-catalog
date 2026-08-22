@@ -10,5 +10,10 @@
     <AnalysisLevel>latest</AnalysisLevel>
     <AnalysisMode>Default</AnalysisMode>
     <NoWarn>$(NoWarn);CA1859</NoWarn>
+    <Authors>Marshall Moorman</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/MarshallMoorman/ado-repo-catalog</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <NeutralLanguage>en-US</NeutralLanguage>
   </PropertyGroup>
 </Project>
